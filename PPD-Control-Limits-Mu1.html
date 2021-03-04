@@ -205,8 +205,12 @@ FunnelPlotR::funnel_plot(hsmr$numerator, hsmr$denominator,
 <div id="negative-binomial-distribution" class="section level2">
 <h2>Negative-Binomial Distribution</h2>
 <p>The Negative-Binomial is an attractive alternative to the Poisson as it does not assume an equal mean-variance relationship (like the Poisson).</p>
-<p>Given the negative-binomial distribution: <span class="math display">\[
+<p>The standard negative-binomial distribution is parameterised using : <span class="math display">\[
 y \sim NB(r,p)
+\]</span></p>
+<p>These parameters are derived using the mean (<span class="math inline">\(\mu\)</span>) and dispersion (<span class="math inline">\(\phi\)</span>) of the distribution: <span class="math display">\[
+r = \phi \\
+p = \frac{\phi}{\phi + \mu}
 \]</span></p>
 <p>The mean of the distribution is given by: <span class="math display">\[
 E[y] = \mu
@@ -214,10 +218,6 @@ E[y] = \mu
 <p>The variance of this distribution is given by: <span class="math display">\[
 Var[y] = \mu + \frac{\mu^2}{\phi}
 \]</span> Thus, the dispersion parameter <span class="math inline">\(\phi\)</span> allows the variance of the observations to be greater than the mean. Note also that as the dispersion parameter <span class="math inline">\(\phi\)</span> approaches <span class="math inline">\(\infty\)</span>, the negative binomial distribution approaches the Poisson (i.e., the variance approaches the mean). This additional modelling of overdispersion is an attractive approach for constructing control limits for mortality data, as it allows for the limits to then represent the range within future observations should fall if they were as overdispersed as the present observations.</p>
-<p>These mean and dispersion parameters (i.e., <span class="math inline">\(\mu\)</span> and <span class="math inline">\(\phi\)</span>) are related to the NB hyperparameters (<span class="math inline">\(r\)</span> and <span class="math inline">\(p\)</span>) via: <span class="math display">\[
-r = \phi \\
-p = \frac{\phi}{\phi + \mu}
-\]</span></p>
 <p>A simple and computationally inexpensive method to construct prediction intervals for the Negative-Binomial is through the use of Bayesian posterior-predictive distributions.</p>
 <div id="posterior-predictive-distribution" class="section level3">
 <h3>Posterior-Predictive Distribution</h3>
@@ -235,13 +235,12 @@ P(y_{new}|y) = \int_{\theta}P(y_{new}|\theta)P(\theta|y)d\theta
 <p>To obtain a closed-form expression for the posterior-predictive distribution of the negative binomial, we’ll take advantage of the fact that it can be <a href="https://gregorygundersen.com/blog/2019/09/16/poisson-gamma-nb/">reparameterised</a> as a Poisson distribution with a Gamma (shape and rate) prior.</p>
 <p>That is, the negative-binomial: <span class="math display">\[
 y \sim NB(r,p)
-\]</span> Where: <span class="math display">\[
+\]</span> Reiterating that: <span class="math display">\[
 r = \phi \\
 p = \frac{\phi}{\phi + \mu}
 \]</span></p>
 <p>Is equivalent to: <span class="math display">\[
-y \sim Poisson(\lambda)
-\]</span> <span class="math display">\[
+y \sim Poisson(\lambda) \\
 \lambda \sim Gamma(r,\frac{p}{1-p})
 \]</span></p>
 <p>The posterior distribution for <span class="math inline">\(\lambda\)</span> is then <a href="https://people.stat.sc.edu/Hitchcock/stat535slidesday18.pdf">given by</a>:</p>
@@ -261,9 +260,7 @@ b_1 = \frac{p}{1-p} + 1
 y_{new}|y \sim NB(a_1,\frac{1}{b_1+1})
 \]</span></p>
 <p>With <a href="https://people.stat.sc.edu/Hitchcock/stat535slidesday18.pdf">mean and variance</a>: <span class="math display">\[
-E[y_{new}|y] = \frac{a_1}{b_1}
-\]</span></p>
-<p><span class="math display">\[
+E[y_{new}|y] = \frac{a_1}{b_1} \\
 Var[y_{new}|y] = \frac{a_1}{b_1} + \frac{a_1}{b_1^2}
 \]</span></p>
 <p>As shown above, the use of conjugate prior distributions allows for the moments (and quantiles) of this predictive distribution to be derived analytically, rather than needing to rely on MCMC methods. This has great value in a production context, allowing the control limits to be derived in a fraction of the time required to sample and post-process a full Bayesian model.</p>
@@ -274,28 +271,28 @@ Var[y_{new}|y] = \frac{a_1}{b_1} + \frac{a_1}{b_1^2}
 <h3>Worked Example</h3>
 <p>First we’ll estimate the parameters for the Negative-Binomial distribution. The naive approach would be to estimate these parameters using all observations. However, while some observed counts may not be large/extreme in and of themselves, they may be extreme when considered in combination with their respective expected count. The variation seen by these units with extreme ratios may be due to special cause variation rather than overdispersion. As such, if we account for the variation of these hospitals in the estimate of dispersion, then there is the risk of adjusting the control limits for special-cause variation rather than overdispersion.</p>
 <p>To account for these issues, we instead estimate the model parameters using a truncated dataset. We will use the standard practice of truncating the upper and lower 10% of ratios:</p>
-<pre class="r"><code>tmp_dat = hsmr %&gt;%
+<pre class="r"><code>trunc_data = hsmr %&gt;%
   mutate(pr = numerator / denominator) %&gt;%
   filter(pr &lt; quantile(pr, 0.9, na.rm=T) &amp;
          pr &gt; quantile(pr, 0.1, na.rm=T))
-tmp_fit =
-  VGAM::vglm(numerator ~ 1, VGAM::negbinomial(), data=tmp_dat) %&gt;%
+disp_fit =
+  VGAM::vglm(numerator ~ 1, VGAM::negbinomial(), data=trunc_data) %&gt;%
     VGAM::Coef() %&gt;%
     as.numeric()
 
-mu = tmp_fit[1]
-phi = tmp_fit[2]
+mu = disp_fit[1]
+phi = disp_fit[2]
 
 # Store the ranges of truncated data, for later plotting
-xlims = range(tmp_dat$denominator)
-ylims = range(tmp_dat$numerator/tmp_dat$denominator)</code></pre>
+xlims = range(trunc_data$denominator)
+ylims = range(trunc_data$numerator/trunc_data$denominator)</code></pre>
 <p>Next we need a function to calculate the mean and variance of the posterior-predictive distribution for a given count and use that to calculate the control limits:</p>
 <pre class="r"><code>lims_mvar = function(ynew,mu,phi) {
   # Transform mu and phi to NB parameters
   r = phi
   p = phi/(phi+mu)
   
-  # Construct parameters of posterior
+  # Construct parameters of Gamma posterior
   a1 = r + ynew
   b1 = p/(1-p) + 1
   
@@ -322,7 +319,7 @@ ylims = range(tmp_dat$numerator/tmp_dat$denominator)</code></pre>
   r = phi
   p = phi/(phi+mu)
   
-  # Construct parameters of posterior
+  # Construct parameters of Gamma posterior
   a1 = r + ynew
   b1 = p/(1-p) + 1
   
